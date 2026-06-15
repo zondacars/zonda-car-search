@@ -121,18 +121,24 @@ Aim for up to 30 confirmed-active listings when they genuinely exist (fetch-veri
       }
     };
 
-    // retry transient upstream failures (503/529/502) a couple of times
+    // retry transient upstream failures (429 rate-limit, 502/503/529) a few times
     let anthropicResp;
     let lastErr;
-    for (let attempt = 0; attempt < 3; attempt++) {
+    for (let attempt = 0; attempt < 4; attempt++) {
       try {
         anthropicResp = await callAnthropic();
         if (anthropicResp.ok) break;
-        if (![502, 503, 529].includes(anthropicResp.status)) break; // non-transient: stop
+        // 429 can be a momentary rate-limit burst — worth retrying with a longer wait
+        const retriable = [429, 502, 503, 529].includes(anthropicResp.status);
+        if (!retriable) break;
+        // longer backoff for rate limits than for generic blips
+        const wait = anthropicResp.status === 429 ? 2500 * (attempt + 1) : 600 * (attempt + 1);
+        await new Promise(r => setTimeout(r, wait));
+        continue;
       } catch (e) {
         lastErr = e; // network/abort error — retry
+        await new Promise(r => setTimeout(r, 600 * (attempt + 1)));
       }
-      await new Promise(r => setTimeout(r, 600 * (attempt + 1))); // brief backoff
     }
 
     if (!anthropicResp) {
@@ -141,12 +147,19 @@ Aim for up to 30 confirmed-active listings when they genuinely exist (fetch-veri
 
     if (!anthropicResp.ok) {
       const errText = await anthropicResp.text();
+      const low = errText.toLowerCase();
+      let msg;
+      if (anthropicResp.status === 401) {
+        msg = 'Check your API key.';
+      } else if (anthropicResp.status === 429) {
+        msg = (low.includes('credit') || low.includes('billing') || low.includes('balance'))
+          ? 'Out of API credits — add credits at console.anthropic.com.'
+          : 'Rate limited (too many requests for your API tier). Wait a moment and try again; raising your tier at console.anthropic.com lifts the cap.';
+      } else {
+        msg = errText.slice(0, 200);
+      }
       return res.status(anthropicResp.status).json({
-        error: `Anthropic API error (${anthropicResp.status}). ${
-          anthropicResp.status === 401 ? 'Check your API key.' :
-          anthropicResp.status === 429 ? 'Rate limit or out of credits.' :
-          errText.slice(0, 200)
-        }`
+        error: `Anthropic API error (${anthropicResp.status}). ${msg}`
       });
     }
 
