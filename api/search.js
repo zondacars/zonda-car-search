@@ -30,35 +30,37 @@ export default async function handler(req, res) {
 
     const prompt = `You are a classic and rare car listing search engine. The user is searching for this car: "${query}".
 
-Use web search to find REAL, CURRENTLY-FOR-SALE listings for this exact car across sources like: ${srcList}.
+Do MANY targeted web searches across these sources to find as many real matches as possible: ${srcList}. Search each promising source specifically (e.g. site-specific searches), not just one broad query.
 
-Treat AVAILABILITY and PRICE as separate things. A listing has three possible price states:
-1. For sale WITH a price -> include it, put the price in "price".
-2. For sale but "Call for price" / "Inquire" / "POA" / "Price on request" -> STILL INCLUDE IT. Put "Call for price" in the "price" field. These are live, buyable cars — never treat them as sold or invalid.
-3. SOLD / ended auction / withdrawn / no longer available -> EXCLUDE entirely.
+CRITICAL — INDIVIDUAL CAR PAGES ONLY:
+- Every result MUST link to a SINGLE specific vehicle's own listing page (one car, its own price, photos, and description).
+- REJECT and never return: search results pages, category/browse pages, "X cars for sale" roundup pages, filtered-list URLs, dealer inventory index pages, or auction "results" archives. If a URL contains things like /search, /results, ?make=, ?model=, /cars-for-sale (with no specific vehicle), /inventory (index), it is NOT a valid result.
+- A valid listing URL points at one car — typically with a unique listing/stock/item ID or a specific car slug in the path (e.g. .../listing/2023-dodge-challenger-srt-hellcat-12345 or an eBay item number).
+- If you only find a search/category page for a source, do NOT include it — open through to the individual cars, or skip that source.
 
-STRICT RULES:
-- Include a car as long as it is still PURCHASABLE, whether or not a number is shown. Missing price is NOT a reason to drop a listing — use "Call for price".
-- EXCLUDE only genuinely-gone cars: sold, ended/past auctions, withdrawn, or "no longer available".
-- Only include listings grounded in actual web search results, each with a REAL direct listing URL.
-- NEVER invent URLs, prices, listings, or images. Do NOT pad the list to reach a count — only real, currently-available cars.
-- For "image", include a direct image URL ONLY if one appears in the search results; otherwise null. Never guess an image URL.
-- Cast a WIDE net across all the listed sources to surface as many genuine matches as possible.${mileageRule}
+Treat AVAILABILITY and PRICE as separate. Three price states:
+1. For sale WITH a price -> include, put price in "price".
+2. For sale but "Call for price" / "Inquire" / "POA" -> INCLUDE, put "Call for price" in "price". These are live cars.
+3. SOLD / ended auction / withdrawn / no longer available -> EXCLUDE.
 
-Return ONLY a valid JSON array (no markdown fences, no commentary). Each object:
+OTHER RULES:
+- Only real listings grounded in actual search results, each with a real individual-listing URL. NEVER invent URLs, prices, listings, or images. Never pad to reach a count.
+- For "image", include a direct image URL only if one appears in results; otherwise null.${mileageRule}
+
+Return ONLY a valid JSON array (no markdown, no commentary). Each object:
 {
   "title": "full listing title",
   "source": "platform name",
-  "price": "asking price string, or 'Call for price' if no number is given",
+  "price": "asking price string, or 'Call for price'",
   "mileage": "mileage string or null",
   "location": "city/state or null",
   "condition": "one-word condition or null",
   "description": "1-2 sentence highlight of key specs and condition",
-  "url": "real direct listing URL from search results, or null",
+  "url": "real INDIVIDUAL listing URL (never a search/category page)",
   "image": "direct image URL from results, or null"
 }
 
-Aim for up to 20 currently-available listings when they genuinely exist. Return only real ones — fewer is fine if that's all that's for sale. Return [] if none found.`;
+Aim for up to 20 currently-available individual listings when they genuinely exist. Real ones only. Return [] if none found.`;
 
     const anthropicResp = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
@@ -69,8 +71,8 @@ Aim for up to 20 currently-available listings when they genuinely exist. Return 
       },
       body: JSON.stringify({
         model: 'claude-sonnet-4-6',
-        max_tokens: 5000,
-        tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 9 }],
+        max_tokens: 6000,
+        tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 12 }],
         messages: [{ role: 'user', content: prompt }]
       })
     });
@@ -102,6 +104,32 @@ Aim for up to 20 currently-available listings when they genuinely exist. Return 
     listings = listings.filter(it => {
       const blob = `${(it && it.price) || ''} ${(it && it.condition) || ''} ${(it && it.title) || ''}`.toLowerCase();
       return !/(sold|no longer available|auction ended|ended:)/.test(blob);
+    });
+
+    // drop aggregator search/category pages and url-less results; require an individual listing URL
+    const looksLikeIndexPage = (u) => {
+      if (!u) return true;
+      const s = String(u).toLowerCase();
+      const signals = [
+        '/search', '/results', 'shopping/results', '/cars-for-sale/all',
+        '?make=', '&make=', '?model=', '&model=', 'keyword=', 'searchradius',
+        'zip=', 'sortby=', 'page=', '/auctions/results', '/listings?'
+      ];
+      if (signals.some(sig => s.includes(sig))) return true;
+      if (/\/cars-for-sale\/?$/.test(s)) return true;   // bare category page
+      if (/\/listings\/?$/.test(s)) return true;
+      if (/\/inventory\/?$/.test(s)) return true;        // dealer inventory index
+      return false;
+    };
+    listings = listings.filter(it => it && it.url && !looksLikeIndexPage(it.url));
+
+    // dedupe by normalized URL
+    const seen = new Set();
+    listings = listings.filter(it => {
+      const key = String(it.url).split('?')[0].replace(/\/$/, '').toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
     });
 
     return res.status(200).json({ listings });
