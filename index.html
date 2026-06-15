@@ -423,7 +423,7 @@ const SOURCES = [
   { id: 'autotrader',   label: 'AutoTrader' },
   { id: 'cargurus',     label: 'CarGurus' },
   { id: 'facebook',     label: 'Facebook Mkt' },
-  { id: 'dealerships',  label: 'Dealerships' },
+  { id: 'dealerships',  label: 'Dealers, Museums & Collectors' },
 ];
 
 // render source chips
@@ -460,6 +460,7 @@ function carPlaceholder() {
 }
 
 function buildCard(item) {
+  const isInventory = item.listingType === 'inventory';
   const imgHtml = item.image
     ? `<img class="card-img" src="${item.image}" alt="${item.title}" onerror="this.parentNode.innerHTML='${carPlaceholder().replace(/'/g, "\\'")}'" />`
     : carPlaceholder();
@@ -467,16 +468,22 @@ function buildCard(item) {
   const tags = [item.mileage, item.location, item.condition].filter(Boolean)
     .map(t => `<span class="meta-tag">${t}</span>`).join('');
 
+  const sourceLine = isInventory
+    ? `<div class="card-source" style="color:var(--light)">${item.source} · <span style="color:var(--gold)">Dealer inventory</span></div>`
+    : `<div class="card-source">${item.source}</div>`;
+
+  const linkText = isInventory ? 'Browse matching inventory →' : 'View Listing →';
+
   return `
     <a class="card" href="${item.url || '#'}" target="_blank" rel="noopener">
       ${imgHtml}
       <div class="card-body">
-        <div class="card-source">${item.source}</div>
+        ${sourceLine}
         <div class="card-title">${item.title}</div>
         ${item.price ? `<div class="card-price">${item.price}</div>` : ''}
         ${tags ? `<div class="card-meta">${tags}</div>` : ''}
         ${item.description ? `<div class="card-desc">${item.description}</div>` : ''}
-        ${item.url ? `<span class="card-link">View Listing →</span>` : ''}
+        ${item.url ? `<span class="card-link">${linkText}</span>` : ''}
       </div>
     </a>`;
 }
