@@ -20,7 +20,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { query, sources, maxMiles } = req.body || {};
+    const { query, sources, trim, maxMiles } = req.body || {};
     if (!query) return res.status(400).json({ error: 'Missing search query.' });
 
     // Map each selected source id to a clear phrase the search can act on.
@@ -44,6 +44,10 @@ export default async function handler(req, res) {
 
     const mileageRule = maxMiles
       ? `\n- ONLY include cars with ${Number(maxMiles).toLocaleString()} miles or fewer. Exclude anything clearly above that.`
+      : '';
+
+    const trimRule = trim
+      ? `\n- TRIM FAMILY: the user entered the trim "${trim}". Treat it as a whole trim FAMILY, not a literal exact-match string. Include that trim AND all of its variants, sub-trims, performance packages, special editions, and higher / range-topping derivatives. (For example, a "Hellcat" search must also match Hellcat Widebody, Hellcat Redeye, Hellcat Jailbreak, SRT Super Stock, and Demon / Demon 170 variants.) Any car in that family counts as a match.`
       : '';
 
     const prompt = `You are a classic and rare car listing search engine. The user is searching for this car: "${query}".
@@ -74,7 +78,7 @@ PRICE STATES:
 - For sale, "Call for price"/"Inquire"/"POA" -> include, put "Call for price" in "price".
 - Sold / ended / withdrawn -> exclude (per step 3).
 
-RULES: Never invent URLs, prices, listings, or images. Never pad to reach a count. For "image", include a direct image URL only if one appears in results; otherwise null.${mileageRule}
+RULES: Never invent URLs, prices, listings, or images. Never pad to reach a count. For "image", include a direct image URL only if one appears in results; otherwise null.${trimRule}${mileageRule}
 
 Return ONLY a valid JSON array (no markdown, no commentary). Each object:
 {
