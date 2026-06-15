@@ -1,0 +1,566 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Zonda Car Search</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@300;400;500;600&family=Roboto+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --black:    #0a0a0a;
+      --carbon:   #141414;
+      --gunmetal: #1e1e1e;
+      --rail:     #2a2a2a;
+      --dim:      #555;
+      --mid:      #888;
+      --light:    #ccc;
+      --white:    #f0f0f0;
+      --gold:     #c9a84c;
+      --gold-dim: #7a5f22;
+      --red:      #c0392b;
+    }
+
+    html, body {
+      background: var(--black);
+      color: var(--white);
+      font-family: 'Inter', sans-serif;
+      min-height: 100vh;
+    }
+
+    /* ── HEADER ── */
+    header {
+      border-bottom: 1px solid var(--rail);
+      padding: 0 2rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 64px;
+      position: sticky;
+      top: 0;
+      background: var(--black);
+      z-index: 100;
+    }
+    .logo {
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: 1.6rem;
+      letter-spacing: 0.12em;
+      color: var(--white);
+    }
+    .logo span { color: var(--gold); }
+    .badge {
+      font-family: 'Roboto Mono', monospace;
+      font-size: 0.65rem;
+      color: var(--gold);
+      border: 1px solid var(--gold-dim);
+      padding: 3px 8px;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+    }
+
+    /* ── HERO ── */
+    .hero {
+      padding: 4rem 2rem 3rem;
+      max-width: 860px;
+      margin: 0 auto;
+    }
+    .hero-eyebrow {
+      font-family: 'Roboto Mono', monospace;
+      font-size: 0.7rem;
+      color: var(--gold);
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      margin-bottom: 1rem;
+    }
+    .hero h1 {
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: clamp(2.8rem, 6vw, 5rem);
+      line-height: 0.95;
+      letter-spacing: 0.04em;
+      color: var(--white);
+      margin-bottom: 1.2rem;
+    }
+    .hero h1 em {
+      color: var(--gold);
+      font-style: normal;
+    }
+    .hero p {
+      color: var(--mid);
+      font-size: 0.95rem;
+      font-weight: 300;
+      line-height: 1.6;
+      max-width: 520px;
+    }
+
+    /* ── SEARCH FORM ── */
+    .search-wrap {
+      max-width: 860px;
+      margin: 0 auto;
+      padding: 0 2rem 3rem;
+    }
+    .search-grid {
+      display: grid;
+      grid-template-columns: 90px 1fr 1fr 1fr;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+    @media (max-width: 640px) {
+      .search-grid { grid-template-columns: 1fr 1fr; }
+    }
+    .field label {
+      display: block;
+      font-family: 'Roboto Mono', monospace;
+      font-size: 0.6rem;
+      color: var(--gold);
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      margin-bottom: 6px;
+    }
+    .field input, .field select {
+      width: 100%;
+      background: var(--gunmetal);
+      border: 1px solid var(--rail);
+      color: var(--white);
+      font-family: 'Inter', sans-serif;
+      font-size: 0.9rem;
+      padding: 10px 12px;
+      outline: none;
+      transition: border-color 0.2s;
+      -webkit-appearance: none;
+    }
+    .field input::placeholder { color: var(--dim); }
+    .field input:focus, .field select:focus { border-color: var(--gold); }
+    .field select option { background: var(--gunmetal); }
+
+    /* sources row */
+    .sources-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 14px;
+    }
+    .src-chip {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: var(--gunmetal);
+      border: 1px solid var(--rail);
+      padding: 5px 10px;
+      cursor: pointer;
+      user-select: none;
+      transition: border-color 0.15s;
+    }
+    .src-chip input[type=checkbox] { accent-color: var(--gold); width: 13px; height: 13px; cursor: pointer; }
+    .src-chip span {
+      font-family: 'Roboto Mono', monospace;
+      font-size: 0.65rem;
+      letter-spacing: 0.08em;
+      color: var(--light);
+      text-transform: uppercase;
+    }
+    .src-chip:has(input:checked) { border-color: var(--gold-dim); }
+
+    .btn-search {
+      width: 100%;
+      background: var(--gold);
+      color: var(--black);
+      border: none;
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: 1.2rem;
+      letter-spacing: 0.15em;
+      padding: 14px;
+      cursor: pointer;
+      transition: background 0.2s, transform 0.1s;
+    }
+    .btn-search:hover { background: #d4af5a; }
+    .btn-search:active { transform: scale(0.99); }
+    .btn-search:disabled { background: var(--dim); cursor: not-allowed; color: var(--rail); }
+
+    /* ── STATUS ── */
+    .status-bar {
+      max-width: 860px;
+      margin: 0 auto;
+      padding: 0 2rem 1rem;
+      display: none;
+    }
+    .status-bar.active { display: block; }
+    .status-line {
+      font-family: 'Roboto Mono', monospace;
+      font-size: 0.72rem;
+      color: var(--gold);
+      letter-spacing: 0.08em;
+      padding: 10px 14px;
+      background: var(--gunmetal);
+      border-left: 2px solid var(--gold);
+      animation: pulse 1.4s ease-in-out infinite;
+    }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.5} }
+
+    /* ── RESULTS ── */
+    .results-wrap {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 0 2rem 4rem;
+    }
+    .results-header {
+      display: flex;
+      align-items: baseline;
+      gap: 12px;
+      margin-bottom: 1.5rem;
+      border-bottom: 1px solid var(--rail);
+      padding-bottom: 0.8rem;
+    }
+    .results-header h2 {
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: 1.4rem;
+      letter-spacing: 0.08em;
+      color: var(--white);
+    }
+    .results-count {
+      font-family: 'Roboto Mono', monospace;
+      font-size: 0.7rem;
+      color: var(--mid);
+    }
+
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+      gap: 16px;
+    }
+
+    .card {
+      background: var(--carbon);
+      border: 1px solid var(--rail);
+      display: flex;
+      flex-direction: column;
+      transition: border-color 0.2s, transform 0.15s;
+      cursor: pointer;
+      text-decoration: none;
+    }
+    .card:hover { border-color: var(--gold-dim); transform: translateY(-2px); }
+
+    .card-img {
+      width: 100%;
+      aspect-ratio: 16/10;
+      object-fit: cover;
+      background: var(--gunmetal);
+      display: block;
+    }
+    .card-img-placeholder {
+      width: 100%;
+      aspect-ratio: 16/10;
+      background: var(--gunmetal);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .card-img-placeholder svg { opacity: 0.15; }
+
+    .card-body { padding: 14px 16px 16px; flex: 1; display: flex; flex-direction: column; gap: 8px; }
+
+    .card-source {
+      font-family: 'Roboto Mono', monospace;
+      font-size: 0.6rem;
+      letter-spacing: 0.12em;
+      color: var(--gold);
+      text-transform: uppercase;
+    }
+    .card-title {
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: 1.15rem;
+      letter-spacing: 0.05em;
+      color: var(--white);
+      line-height: 1.1;
+    }
+    .card-price {
+      font-family: 'Roboto Mono', monospace;
+      font-size: 1rem;
+      color: var(--gold);
+      font-weight: 500;
+    }
+    .card-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    .meta-tag {
+      font-family: 'Roboto Mono', monospace;
+      font-size: 0.6rem;
+      color: var(--mid);
+      background: var(--gunmetal);
+      padding: 3px 7px;
+      letter-spacing: 0.06em;
+    }
+    .card-desc {
+      font-size: 0.8rem;
+      color: var(--mid);
+      line-height: 1.5;
+      flex: 1;
+      display: -webkit-box;
+      -webkit-line-clamp: 3;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+    .card-link {
+      margin-top: auto;
+      font-family: 'Roboto Mono', monospace;
+      font-size: 0.65rem;
+      letter-spacing: 0.1em;
+      color: var(--gold);
+      text-transform: uppercase;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding-top: 10px;
+      border-top: 1px solid var(--rail);
+    }
+    .card-link:hover { color: #d4af5a; }
+
+    /* no results / error */
+    .message-box {
+      background: var(--gunmetal);
+      border: 1px solid var(--rail);
+      padding: 2rem;
+      text-align: center;
+      display: none;
+    }
+    .message-box.active { display: block; }
+    .message-box h3 {
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: 1.3rem;
+      letter-spacing: 0.08em;
+      color: var(--mid);
+      margin-bottom: 0.5rem;
+    }
+    .message-box p { font-size: 0.82rem; color: var(--dim); }
+
+    /* footer */
+    footer {
+      border-top: 1px solid var(--rail);
+      padding: 1.2rem 2rem;
+      text-align: center;
+      font-family: 'Roboto Mono', monospace;
+      font-size: 0.62rem;
+      color: var(--dim);
+      letter-spacing: 0.08em;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="logo">ZONDA <span>CARS</span></div>
+  <div class="badge">Rare Car Finder</div>
+</header>
+
+<div class="hero">
+  <div class="hero-eyebrow">Multi-Source Search Engine</div>
+  <h1>Find The<br/><em>Rarest</em> Cars</h1>
+  <p>Searches BaT, eBay Motors, Hemmings, ClassicCars, Cars & Bids, Copart, AutoTrader, and more — simultaneously.</p>
+</div>
+
+<div class="search-wrap">
+  <div class="search-grid">
+    <div class="field">
+      <label>Year</label>
+      <input type="number" id="year" placeholder="1973" min="1900" max="2024" />
+    </div>
+    <div class="field">
+      <label>Make</label>
+      <input type="text" id="make" placeholder="Porsche" />
+    </div>
+    <div class="field">
+      <label>Model</label>
+      <input type="text" id="model" placeholder="914" />
+    </div>
+    <div class="field">
+      <label>Trim / Notes</label>
+      <input type="text" id="trim" placeholder="914-6, matching #s" />
+    </div>
+  </div>
+
+  <div class="sources-row" id="sourcesRow"></div>
+
+  <button class="btn-search" id="searchBtn" onclick="doSearch()">SEARCH ALL SOURCES</button>
+</div>
+
+<div class="status-bar" id="statusBar">
+  <div class="status-line" id="statusLine">Scanning sources...</div>
+</div>
+
+<div class="results-wrap" id="resultsWrap" style="display:none">
+  <div class="results-header">
+    <h2>RESULTS</h2>
+    <span class="results-count" id="resultsCount"></span>
+  </div>
+  <div class="cards" id="cardsGrid"></div>
+  <div class="message-box" id="noResults">
+    <h3>No Listings Found</h3>
+    <p>Try broadening your search — remove the trim, widen the year, or check fewer sources.</p>
+  </div>
+</div>
+
+<footer>ZONDA CARS &nbsp;·&nbsp; RARE CAR FINDER &nbsp;·&nbsp; ALL SOURCES SEARCHED LIVE</footer>
+
+<script>
+const SOURCES = [
+  { id: 'bat',          label: 'Bring a Trailer' },
+  { id: 'ebay',         label: 'eBay Motors' },
+  { id: 'hemmings',     label: 'Hemmings' },
+  { id: 'classiccars',  label: 'ClassicCars' },
+  { id: 'carsandbids',  label: 'Cars & Bids' },
+  { id: 'copart',       label: 'Copart' },
+  { id: 'autotrader',   label: 'AutoTrader' },
+  { id: 'cargurus',     label: 'CarGurus' },
+  { id: 'facebook',     label: 'Facebook Mkt' },
+  { id: 'dealerships',  label: 'Dealerships' },
+];
+
+// render source chips
+const row = document.getElementById('sourcesRow');
+SOURCES.forEach(s => {
+  const chip = document.createElement('label');
+  chip.className = 'src-chip';
+  chip.innerHTML = `<input type="checkbox" value="${s.id}" checked /><span>${s.label}</span>`;
+  row.appendChild(chip);
+});
+
+function getCheckedSources() {
+  return [...document.querySelectorAll('.src-chip input:checked')].map(i => i.value);
+}
+
+function setStatus(msg) {
+  document.getElementById('statusBar').classList.add('active');
+  document.getElementById('statusLine').textContent = msg;
+}
+
+function hideStatus() {
+  document.getElementById('statusBar').classList.remove('active');
+}
+
+function carPlaceholder() {
+  return `<div class="card-img-placeholder">
+    <svg width="60" height="40" viewBox="0 0 60 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <rect x="2" y="14" width="56" height="20" rx="3" fill="#ccc"/>
+      <ellipse cx="14" cy="34" rx="6" ry="6" fill="#ccc"/>
+      <ellipse cx="46" cy="34" rx="6" ry="6" fill="#ccc"/>
+      <path d="M10 14 L18 4 H42 L50 14" fill="#ccc"/>
+    </svg>
+  </div>`;
+}
+
+function buildCard(item) {
+  const imgHtml = item.image
+    ? `<img class="card-img" src="${item.image}" alt="${item.title}" onerror="this.parentNode.innerHTML='${carPlaceholder().replace(/'/g, "\\'")}'" />`
+    : carPlaceholder();
+
+  const tags = [item.mileage, item.location, item.condition].filter(Boolean)
+    .map(t => `<span class="meta-tag">${t}</span>`).join('');
+
+  return `
+    <a class="card" href="${item.url || '#'}" target="_blank" rel="noopener">
+      ${imgHtml}
+      <div class="card-body">
+        <div class="card-source">${item.source}</div>
+        <div class="card-title">${item.title}</div>
+        ${item.price ? `<div class="card-price">${item.price}</div>` : ''}
+        ${tags ? `<div class="card-meta">${tags}</div>` : ''}
+        ${item.description ? `<div class="card-desc">${item.description}</div>` : ''}
+        ${item.url ? `<span class="card-link">View Listing →</span>` : ''}
+      </div>
+    </a>`;
+}
+
+async function doSearch() {
+  const year  = document.getElementById('year').value.trim();
+  const make  = document.getElementById('make').value.trim();
+  const model = document.getElementById('model').value.trim();
+  const trim  = document.getElementById('trim').value.trim();
+  const sources = getCheckedSources();
+
+  if (!make && !model) {
+    alert('Please enter at least a Make or Model.');
+    return;
+  }
+
+  const query = [year, make, model, trim].filter(Boolean).join(' ');
+
+  document.getElementById('searchBtn').disabled = true;
+  document.getElementById('resultsWrap').style.display = 'none';
+  document.getElementById('noResults').classList.remove('active');
+  setStatus(`Searching for "${query}" across ${sources.length} sources...`);
+
+  const prompt = `You are a classic and rare car listing search engine. The user is searching for: "${query}".
+Search across these sources (where available): ${sources.join(', ')}.
+
+Find real, current or recent listings for this exact car. For each listing found return a JSON array. Each object must have:
+- title: full listing title
+- source: which platform (e.g. "Bring a Trailer", "eBay Motors", "Hemmings", etc.)
+- price: asking price or sold price as string (e.g. "$23,500" or "Sold: $18,000")
+- mileage: mileage if listed (e.g. "47,200 mi")
+- location: city/state if available
+- condition: one word condition if mentioned (e.g. "Excellent", "Project", "Barn Find")
+- description: 1-2 sentence summary of the listing highlights, rare options, condition notes
+- url: direct URL to the listing if you can construct or recall it (otherwise null)
+- image: direct image URL if known (otherwise null)
+
+Return ONLY a valid JSON array, no markdown, no explanation. If you find no listings, return an empty array [].
+Be thorough — search your knowledge and web access for the most relevant and recent listings. Include sold listings with prices as reference comps too. Aim for at least 5-10 results if they exist.`;
+
+  try {
+    const resp = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-6',
+        max_tokens: 1000,
+        tools: [{ type: 'web_search_20250305', name: 'web_search' }],
+        messages: [{ role: 'user', content: prompt }]
+      })
+    });
+
+    const data = await resp.json();
+
+    // extract text from all content blocks
+    const raw = (data.content || [])
+      .map(b => b.type === 'text' ? b.text : '')
+      .join('');
+
+    // parse JSON array from response
+    const match = raw.match(/\[[\s\S]*\]/);
+    let listings = [];
+    if (match) {
+      try { listings = JSON.parse(match[0]); } catch(e) { listings = []; }
+    }
+
+    hideStatus();
+    document.getElementById('resultsWrap').style.display = 'block';
+
+    if (!listings.length) {
+      document.getElementById('noResults').classList.add('active');
+      document.getElementById('resultsCount').textContent = '0 listings found';
+    } else {
+      document.getElementById('resultsCount').textContent = `${listings.length} listing${listings.length !== 1 ? 's' : ''} found`;
+      document.getElementById('cardsGrid').innerHTML = listings.map(buildCard).join('');
+    }
+
+  } catch(err) {
+    hideStatus();
+    document.getElementById('resultsWrap').style.display = 'block';
+    document.getElementById('noResults').classList.add('active');
+    document.getElementById('noResults').querySelector('h3').textContent = 'Search Error';
+    document.getElementById('noResults').querySelector('p').textContent = 'Something went wrong. Check your connection and try again.';
+    console.error(err);
+  }
+
+  document.getElementById('searchBtn').disabled = false;
+}
+
+// allow Enter key to trigger search
+document.addEventListener('keydown', e => { if (e.key === 'Enter') doSearch(); });
+</script>
+</body>
+</html>
