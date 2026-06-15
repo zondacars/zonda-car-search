@@ -32,18 +32,24 @@ export default async function handler(req, res) {
 
 Use web search to find REAL, CURRENTLY-FOR-SALE listings for this exact car across sources like: ${srcList}.
 
+Treat AVAILABILITY and PRICE as separate things. A listing has three possible price states:
+1. For sale WITH a price -> include it, put the price in "price".
+2. For sale but "Call for price" / "Inquire" / "POA" / "Price on request" -> STILL INCLUDE IT. Put "Call for price" in the "price" field. These are live, buyable cars — never treat them as sold or invalid.
+3. SOLD / ended auction / withdrawn / no longer available -> EXCLUDE entirely.
+
 STRICT RULES:
-- ONLY include cars that are CURRENTLY FOR SALE. Do NOT include sold listings, ended/past auctions, or sold price comps under any circumstances.
-- Only include listings you can ground in actual web search results, each with a REAL direct listing URL from those results.
-- NEVER invent URLs, prices, listings, or images. If you find none, return an empty array.
+- Include a car as long as it is still PURCHASABLE, whether or not a number is shown. Missing price is NOT a reason to drop a listing — use "Call for price".
+- EXCLUDE only genuinely-gone cars: sold, ended/past auctions, withdrawn, or "no longer available".
+- Only include listings grounded in actual web search results, each with a REAL direct listing URL.
+- NEVER invent URLs, prices, listings, or images. Do NOT pad the list to reach a count — only real, currently-available cars.
 - For "image", include a direct image URL ONLY if one appears in the search results; otherwise null. Never guess an image URL.
-- Prefer the rarest / closest matches to the requested trim.${mileageRule}
+- Cast a WIDE net across all the listed sources to surface as many genuine matches as possible.${mileageRule}
 
 Return ONLY a valid JSON array (no markdown fences, no commentary). Each object:
 {
   "title": "full listing title",
   "source": "platform name",
-  "price": "current asking price string, or null",
+  "price": "asking price string, or 'Call for price' if no number is given",
   "mileage": "mileage string or null",
   "location": "city/state or null",
   "condition": "one-word condition or null",
@@ -52,7 +58,7 @@ Return ONLY a valid JSON array (no markdown fences, no commentary). Each object:
   "image": "direct image URL from results, or null"
 }
 
-Aim for up to 10 active listings. Return [] if none found.`;
+Aim for up to 20 currently-available listings when they genuinely exist. Return only real ones — fewer is fine if that's all that's for sale. Return [] if none found.`;
 
     const anthropicResp = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
@@ -63,8 +69,8 @@ Aim for up to 10 active listings. Return [] if none found.`;
       },
       body: JSON.stringify({
         model: 'claude-sonnet-4-6',
-        max_tokens: 3000,
-        tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 5 }],
+        max_tokens: 5000,
+        tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 9 }],
         messages: [{ role: 'user', content: prompt }]
       })
     });
