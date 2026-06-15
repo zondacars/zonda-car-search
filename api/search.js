@@ -2,6 +2,9 @@
 // Holds the Anthropic API key securely (server-side) and runs the search.
 // The browser NEVER sees the key.
 
+// Allow up to 60s on Vercel (Hobby max) so the deep multi-search has time to finish.
+export const maxDuration = 60;
+
 export default async function handler(req, res) {
   // CORS (so coworkers on any device can use it)
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -62,20 +65,48 @@ Return ONLY a valid JSON array (no markdown, no commentary). Each object:
 
 Aim for up to 20 currently-available individual listings when they genuinely exist. Real ones only. Return [] if none found.`;
 
-    const anthropicResp = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01'
-      },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-6',
-        max_tokens: 6000,
-        tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 12 }],
-        messages: [{ role: 'user', content: prompt }]
-      })
-    });
+    const callAnthropic = async () => {
+      // abort before the 60s function limit (set via maxDuration below) so we can return a clean error
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 55000);
+      try {
+        return await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': apiKey,
+            'anthropic-version': '2023-06-01'
+          },
+          body: JSON.stringify({
+            model: 'claude-sonnet-4-6',
+            max_tokens: 6000,
+            tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 10 }],
+            messages: [{ role: 'user', content: prompt }]
+          }),
+          signal: controller.signal
+        });
+      } finally {
+        clearTimeout(timeout);
+      }
+    };
+
+    // retry transient upstream failures (503/529/502) a couple of times
+    let anthropicResp;
+    let lastErr;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        anthropicResp = await callAnthropic();
+        if (anthropicResp.ok) break;
+        if (![502, 503, 529].includes(anthropicResp.status)) break; // non-transient: stop
+      } catch (e) {
+        lastErr = e; // network/abort error — retry
+      }
+      await new Promise(r => setTimeout(r, 600 * (attempt + 1))); // brief backoff
+    }
+
+    if (!anthropicResp) {
+      return res.status(504).json({ error: 'The search took too long or the connection dropped. Please try again — narrowing the search (fewer sources) also helps.' });
+    }
 
     if (!anthropicResp.ok) {
       const errText = await anthropicResp.text();
