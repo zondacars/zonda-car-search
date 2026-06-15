@@ -17,35 +17,42 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { query, sources } = req.body || {};
+    const { query, sources, maxMiles } = req.body || {};
     if (!query) return res.status(400).json({ error: 'Missing search query.' });
 
-    const srcList = Array.isArray(sources) && sources.length ? sources.join(', ') : 'all major classic car marketplaces';
+    const srcList = Array.isArray(sources) && sources.length
+      ? sources.join(', ')
+      : 'all major classic car marketplaces';
+
+    const mileageRule = maxMiles
+      ? `\n- ONLY include cars with ${Number(maxMiles).toLocaleString()} miles or fewer. Exclude anything clearly above that.`
+      : '';
 
     const prompt = `You are a classic and rare car listing search engine. The user is searching for this car: "${query}".
 
-Use web search to find REAL, currently-listed or recently-sold listings for this exact car across sources like: ${srcList}.
+Use web search to find REAL, CURRENTLY-FOR-SALE listings for this exact car across sources like: ${srcList}.
 
-Rules:
-- Only include listings you can ground in actual web search results. Use the REAL listing URL from the search results.
-- NEVER invent URLs, prices, or listings. If you cannot find real listings, return an empty array.
-- Include recently-sold listings as price comps (mark them in the price field, e.g. "Sold: $42,000").
-- Prefer the rarest / closest matches to the requested trim.
+STRICT RULES:
+- ONLY include cars that are CURRENTLY FOR SALE. Do NOT include sold listings, ended/past auctions, or sold price comps under any circumstances.
+- Only include listings you can ground in actual web search results, each with a REAL direct listing URL from those results.
+- NEVER invent URLs, prices, listings, or images. If you find none, return an empty array.
+- For "image", include a direct image URL ONLY if one appears in the search results; otherwise null. Never guess an image URL.
+- Prefer the rarest / closest matches to the requested trim.${mileageRule}
 
 Return ONLY a valid JSON array (no markdown fences, no commentary). Each object:
 {
   "title": "full listing title",
   "source": "platform name",
-  "price": "asking or sold price string, or null",
+  "price": "current asking price string, or null",
   "mileage": "mileage string or null",
   "location": "city/state or null",
   "condition": "one-word condition or null",
-  "description": "1-2 sentence highlight summary",
+  "description": "1-2 sentence highlight of key specs and condition",
   "url": "real direct listing URL from search results, or null",
-  "image": "direct image URL if available, else null"
+  "image": "direct image URL from results, or null"
 }
 
-Aim for 5-12 strong results when they exist. Return [] if none found.`;
+Aim for up to 10 active listings. Return [] if none found.`;
 
     const anthropicResp = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
@@ -56,8 +63,8 @@ Aim for 5-12 strong results when they exist. Return [] if none found.`;
       },
       body: JSON.stringify({
         model: 'claude-sonnet-4-6',
-        max_tokens: 4000,
-        tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 8 }],
+        max_tokens: 3000,
+        tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 5 }],
         messages: [{ role: 'user', content: prompt }]
       })
     });
@@ -65,7 +72,11 @@ Aim for 5-12 strong results when they exist. Return [] if none found.`;
     if (!anthropicResp.ok) {
       const errText = await anthropicResp.text();
       return res.status(anthropicResp.status).json({
-        error: `Anthropic API error (${anthropicResp.status}). ${anthropicResp.status === 401 ? 'Check your API key.' : anthropicResp.status === 429 ? 'Rate limit or out of credits.' : errText.slice(0, 200)}`
+        error: `Anthropic API error (${anthropicResp.status}). ${
+          anthropicResp.status === 401 ? 'Check your API key.' :
+          anthropicResp.status === 429 ? 'Rate limit or out of credits.' :
+          errText.slice(0, 200)
+        }`
       });
     }
 
@@ -80,6 +91,12 @@ Aim for 5-12 strong results when they exist. Return [] if none found.`;
     if (match) {
       try { listings = JSON.parse(match[0]); } catch (e) { listings = []; }
     }
+
+    // server-side safety net: strip any sold/ended listings
+    listings = listings.filter(it => {
+      const blob = `${(it && it.price) || ''} ${(it && it.condition) || ''} ${(it && it.title) || ''}`.toLowerCase();
+      return !/(sold|no longer available|auction ended|ended:)/.test(blob);
+    });
 
     return res.status(200).json({ listings });
 
