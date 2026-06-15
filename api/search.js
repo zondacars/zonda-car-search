@@ -36,7 +36,7 @@ export default async function handler(req, res) {
       autotrader: 'AutoTrader',
       cargurus: 'CarGurus',
       facebook: 'Facebook Marketplace',
-      dealerships: "individual dealer / specialist dealer websites — a dealer's own website (e.g. classic-car and specialty dealers like Gateway, RK Motors, Streetside Classics), NOT marketplaces or aggregators"
+      dealerships: "individual cars for sale NATIONWIDE from: dealer & specialist dealer websites, private-seller listings, auto museums that sell cars, and collector-car sales sites. Each result must link to ONE specific car's own page — never a dealer homepage, 'our inventory' page, or browse/listing page"
     };
     const srcList = Array.isArray(sources) && sources.length
       ? sources.map(id => SOURCE_PHRASES[id] || id).join('; ')
@@ -50,15 +50,24 @@ export default async function handler(req, res) {
 
 PROCESS (follow in order):
 1. Use web_search to find candidate listings across sources like: ${srcList}. Run several targeted searches.
-2. For EACH promising candidate, use web_fetch to OPEN the actual listing page and read it.
-3. From the fetched page content, KEEP a listing ONLY if it is clearly still FOR SALE right now. DISCARD it if the page shows any of: "sold", "sale pending", "no longer available", "this listing has ended", "auction ended", "bidding ended", "winning bid", a past end-date, or a 404/removed page. eBay ended auctions and sold ClassicCars/dealer pages MUST be discarded here.
-4. Only listings you have fetched and confirmed active may appear in the output. If you could not fetch/confirm a listing, do not include it.
+2. For EACH promising candidate, try to use web_fetch to OPEN the actual listing page and read it.
+3. From the fetched page content, KEEP a listing ONLY if it is clearly still FOR SALE right now. DISCARD it if the page shows any of: "sold", "sale pending", "no longer available", "this listing has ended", "auction ended", "bidding ended", "winning bid", a past end-date, or a 404/removed page. eBay ended auctions and sold ClassicCars pages MUST be discarded here.
+4. Verification depends on the source type:
+   - AUCTION / MARKETPLACE listings (eBay, Bring a Trailer, Cars & Bids, ClassicCars, Hemmings auctions, Copart, etc.): you MUST fetch and confirm the listing is active. If you cannot fetch/confirm it, DO NOT include it — these are where sold/ended listings hide.
+   - DEALER / SPECIALIST SITE listings and Cars.com/CarGurus/AutoTrader/KBB dealer vehicle pages: try to fetch. But many dealer sites BLOCK automated fetching. If the fetch is blocked or fails, you may STILL include the listing as long as the search result clearly shows ONE specific car for sale (with a price or "call for price") and nothing indicates it sold. Dealers remove cars when they sell, so an unfetchable dealer vehicle page is presumed active.
+   - Never include anything that actually shows sold/ended, regardless of source.
 
 EXCLUDE these entirely (they are not live individual-car marketplaces):
 - Valuation / info sites: Edmunds, NADA, JD Power, Carfax value pages.
 - For Kelley Blue Book (kbb.com): its "Cars for Sale" individual listings ARE allowed, but its valuation/pricing/review pages are NOT — only include a KBB result if it's a specific car for sale (a kbb.com/cars-for-sale/ vehicle page).
-- Search results pages, category/browse pages, "X cars for sale" roundups, dealer inventory index pages, auction results archives.
-Every result URL must be ONE specific car's own listing page (unique stock/item ID or specific-car slug in the path).
+- Search results pages, category/browse pages, "X cars for sale" roundups, dealer inventory index pages, dealer HOMEPAGES, and auction results archives.
+Every result URL must be ONE specific car's own listing page (unique stock/item ID or specific-car slug in the path) — NEVER a dealer's homepage or "our inventory" page. For the Dealers/Museums/Collectors source, look nationwide across dealer sites, private sellers, auto museums that sell cars, and collector-car sales sites, but still return only individual specific-car pages.
+
+INVENTORY FALLBACK (Dealers/Museums/Collectors source ONLY):
+- If you genuinely cannot isolate an individual car page on a dealer/museum/collector site, you MAY instead return that dealer's INVENTORY/listing page — but ONLY if you have confirmed (by fetching it or from clear search-result evidence) that the inventory currently contains one or more cars matching the user's criteria (year/make/model/trim and the mileage cap).
+- For such a result set "listingType": "inventory", and in "description" state which matching car(s) the inventory contains (e.g. "Dealer stocks a 1969 Camaro Z/28 matching your search, plus others").
+- NEVER return an inventory page that does not contain a matching car, and NEVER return a homepage. This fallback applies only to dealers/museums/collectors — for eBay, BaT, Cars.com, etc. always return individual car pages.
+- For individual car results (the normal case) set "listingType": "car".
 
 PRICE STATES:
 - For sale with a price -> include, put price in "price".
@@ -69,8 +78,9 @@ RULES: Never invent URLs, prices, listings, or images. Never pad to reach a coun
 
 Return ONLY a valid JSON array (no markdown, no commentary). Each object:
 {
-  "title": "full listing title",
-  "source": "platform name",
+  "title": "full listing title (or dealer name + matching car for an inventory result)",
+  "source": "platform or dealer/museum name",
+  "listingType": "car" for an individual car, or "inventory" for a matching dealer inventory page (dealers source only)",
   "price": "asking price string, or 'Call for price'",
   "mileage": "mileage string or null",
   "location": "city/state or null",
@@ -80,7 +90,7 @@ Return ONLY a valid JSON array (no markdown, no commentary). Each object:
   "image": "direct image URL from results, or null"
 }
 
-Aim for up to 20 fetch-verified active listings when they genuinely exist. Verified real ones only. Return [] if none found.`;
+Aim for up to 30 confirmed-active listings when they genuinely exist (fetch-verified for marketplaces; for dealer sites, presumed active if unfetchable per the rules above). Real ones only. Return [] if none found.`;
 
     const callAnthropic = async () => {
       // abort before the 60s function limit (set via maxDuration below) so we can return a clean error
@@ -97,10 +107,10 @@ Aim for up to 20 fetch-verified active listings when they genuinely exist. Verif
           },
           body: JSON.stringify({
             model: 'claude-sonnet-4-6',
-            max_tokens: 6000,
+            max_tokens: 7000,
             tools: [
-              { type: 'web_search_20250305', name: 'web_search', max_uses: 6 },
-              { type: 'web_fetch_20250910', name: 'web_fetch', max_uses: 12 }
+              { type: 'web_search_20250305', name: 'web_search', max_uses: 8 },
+              { type: 'web_fetch_20250910', name: 'web_fetch', max_uses: 18 }
             ],
             messages: [{ role: 'user', content: prompt }]
           }),
@@ -160,24 +170,34 @@ Aim for up to 20 fetch-verified active listings when they genuinely exist. Verif
 
     // drop aggregator search/category pages, valuation/info sites, and url-less results
     const BLOCKED_DOMAINS = ['edmunds.com', 'nadaguides.com', 'jdpower.com', 'carfax.com', 'caranddriver.com', 'motortrend.com'];
-    const looksLikeIndexPage = (u) => {
-      if (!u) return true;
-      const s = String(u).toLowerCase();
-      if (BLOCKED_DOMAINS.some(d => s.includes(d))) return true;  // valuation/info sites, not marketplaces
-      // KBB is allowed, but ONLY its for-sale listings — never its valuation/pricing pages
-      if (s.includes('kbb.com') && !s.includes('/cars-for-sale/')) return true;
-      const signals = [
+    const isAllowed = (it) => {
+      if (!it || !it.url) return false;
+      const s = String(it.url).toLowerCase();
+      if (BLOCKED_DOMAINS.some(d => s.includes(d))) return false;            // valuation/info sites
+      if (s.includes('kbb.com') && !s.includes('/cars-for-sale/')) return false;
+      // always block aggregator SEARCH-results pages (query-driven), regardless of type
+      const searchSignals = [
         '/search', '/results', 'shopping/results', '/cars-for-sale/all',
         '?make=', '&make=', '?model=', '&model=', 'keyword=', 'searchradius',
         'zip=', 'sortby=', 'page=', '/auctions/results', '/listings?'
       ];
-      if (signals.some(sig => s.includes(sig))) return true;
-      if (/\/cars-for-sale\/?$/.test(s)) return true;   // bare category page
-      if (/\/listings\/?$/.test(s)) return true;
-      if (/\/inventory\/?$/.test(s)) return true;        // dealer inventory index
-      return false;
+      if (searchSignals.some(sig => s.includes(sig))) return false;
+      // never allow a bare homepage
+      let path = null;
+      try { path = new URL(s).pathname.replace(/\/+$/, ''); } catch (e) { path = null; }
+      if (path === '') return false;
+      // bare inventory/browse pages: allowed ONLY when tagged as a matching dealer inventory result
+      const bareIndex = [
+        '/inventory', '/vehicles', '/cars-for-sale', '/cars', '/listings',
+        '/used-cars', '/new-cars', '/preowned', '/pre-owned', '/used',
+        '/showroom', '/collection', '/for-sale', '/stock', '/sold'
+      ];
+      const isBareIndex = (path !== null && bareIndex.includes(path))
+        || /\/cars-for-sale\/?$/.test(s) || /\/listings\/?$/.test(s) || /\/inventory\/?$/.test(s);
+      if (isBareIndex) return it.listingType === 'inventory';
+      return true;
     };
-    listings = listings.filter(it => it && it.url && !looksLikeIndexPage(it.url));
+    listings = listings.filter(isAllowed);
 
     // dedupe by normalized URL
     const seen = new Set();
