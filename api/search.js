@@ -40,7 +40,8 @@ PROCESS (follow in order):
 4. Only listings you have fetched and confirmed active may appear in the output. If you could not fetch/confirm a listing, do not include it.
 
 EXCLUDE these entirely (they are not live individual-car marketplaces):
-- Valuation / info sites: KBB / kbb.com, Edmunds, NADA, JD Power, Carfax value pages.
+- Valuation / info sites: Edmunds, NADA, JD Power, Carfax value pages.
+- For Kelley Blue Book (kbb.com): its "Cars for Sale" individual listings ARE allowed, but its valuation/pricing/review pages are NOT — only include a KBB result if it's a specific car for sale (a kbb.com/cars-for-sale/ vehicle page).
 - Search results pages, category/browse pages, "X cars for sale" roundups, dealer inventory index pages, auction results archives.
 Every result URL must be ONE specific car's own listing page (unique stock/item ID or specific-car slug in the path).
 
@@ -143,11 +144,13 @@ Aim for up to 20 fetch-verified active listings when they genuinely exist. Verif
     });
 
     // drop aggregator search/category pages, valuation/info sites, and url-less results
-    const BLOCKED_DOMAINS = ['kbb.com', 'edmunds.com', 'nadaguides.com', 'jdpower.com', 'carfax.com', 'caranddriver.com', 'motortrend.com'];
+    const BLOCKED_DOMAINS = ['edmunds.com', 'nadaguides.com', 'jdpower.com', 'carfax.com', 'caranddriver.com', 'motortrend.com'];
     const looksLikeIndexPage = (u) => {
       if (!u) return true;
       const s = String(u).toLowerCase();
       if (BLOCKED_DOMAINS.some(d => s.includes(d))) return true;  // valuation/info sites, not marketplaces
+      // KBB is allowed, but ONLY its for-sale listings — never its valuation/pricing pages
+      if (s.includes('kbb.com') && !s.includes('/cars-for-sale/')) return true;
       const signals = [
         '/search', '/results', 'shopping/results', '/cars-for-sale/all',
         '?make=', '&make=', '?model=', '&model=', 'keyword=', 'searchradius',
