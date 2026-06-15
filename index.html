@@ -396,6 +396,7 @@
     <h2>RESULTS</h2>
     <span class="results-count" id="resultsCount"></span>
   </div>
+  <p style="font-family:'Roboto Mono',monospace;font-size:0.62rem;color:var(--dim);margin:-0.8rem 0 1.5rem;letter-spacing:0.05em;">Listings are surfaced from live web search — always click through to verify price &amp; availability before acting.</p>
   <div class="cards" id="cardsGrid"></div>
   <div class="message-box" id="noResults">
     <h3>No Listings Found</h3>
@@ -493,48 +494,22 @@ async function doSearch() {
   document.getElementById('noResults').classList.remove('active');
   setStatus(`Searching for "${query}" across ${sources.length} sources...`);
 
-  const prompt = `You are a classic and rare car listing search engine. The user is searching for: "${query}".
-Search across these sources (where available): ${sources.join(', ')}.
-
-Find real, current or recent listings for this exact car. For each listing found return a JSON array. Each object must have:
-- title: full listing title
-- source: which platform (e.g. "Bring a Trailer", "eBay Motors", "Hemmings", etc.)
-- price: asking price or sold price as string (e.g. "$23,500" or "Sold: $18,000")
-- mileage: mileage if listed (e.g. "47,200 mi")
-- location: city/state if available
-- condition: one word condition if mentioned (e.g. "Excellent", "Project", "Barn Find")
-- description: 1-2 sentence summary of the listing highlights, rare options, condition notes
-- url: direct URL to the listing if you can construct or recall it (otherwise null)
-- image: direct image URL if known (otherwise null)
-
-Return ONLY a valid JSON array, no markdown, no explanation. If you find no listings, return an empty array [].
-Be thorough — search your knowledge and web access for the most relevant and recent listings. Include sold listings with prices as reference comps too. Aim for at least 5-10 results if they exist.`;
+  // (search prompt is built securely on the backend)
 
   try {
-    const resp = await fetch('https://api.anthropic.com/v1/messages', {
+    const resp = await fetch('/api/search', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-6',
-        max_tokens: 1000,
-        tools: [{ type: 'web_search_20250305', name: 'web_search' }],
-        messages: [{ role: 'user', content: prompt }]
-      })
+      body: JSON.stringify({ query, sources })
     });
 
     const data = await resp.json();
 
-    // extract text from all content blocks
-    const raw = (data.content || [])
-      .map(b => b.type === 'text' ? b.text : '')
-      .join('');
-
-    // parse JSON array from response
-    const match = raw.match(/\[[\s\S]*\]/);
-    let listings = [];
-    if (match) {
-      try { listings = JSON.parse(match[0]); } catch(e) { listings = []; }
+    if (!resp.ok || data.error) {
+      throw new Error(data.error || 'Search request failed');
     }
+
+    const listings = Array.isArray(data.listings) ? data.listings : [];
 
     hideStatus();
     document.getElementById('resultsWrap').style.display = 'block';
@@ -552,7 +527,7 @@ Be thorough — search your knowledge and web access for the most relevant and r
     document.getElementById('resultsWrap').style.display = 'block';
     document.getElementById('noResults').classList.add('active');
     document.getElementById('noResults').querySelector('h3').textContent = 'Search Error';
-    document.getElementById('noResults').querySelector('p').textContent = 'Something went wrong. Check your connection and try again.';
+    document.getElementById('noResults').querySelector('p').textContent = (err && err.message) ? err.message : 'Something went wrong. Check your connection and try again.';
     console.error(err);
   }
 
