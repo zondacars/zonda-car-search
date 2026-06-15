@@ -102,7 +102,7 @@
     }
     .search-grid {
       display: grid;
-      grid-template-columns: 90px 1fr 1fr 1fr;
+      grid-template-columns: 80px 1fr 1fr 1.2fr 90px;
       gap: 10px;
       margin-bottom: 10px;
     }
@@ -380,6 +380,10 @@
       <label>Trim / Notes</label>
       <input type="text" id="trim" placeholder="914-6, matching #s" />
     </div>
+    <div class="field">
+      <label>Max Miles</label>
+      <input type="number" id="maxMiles" placeholder="any" min="0" step="1000" />
+    </div>
   </div>
 
   <div class="sources-row" id="sourcesRow"></div>
@@ -396,7 +400,7 @@
     <h2>RESULTS</h2>
     <span class="results-count" id="resultsCount"></span>
   </div>
-  <p style="font-family:'Roboto Mono',monospace;font-size:0.62rem;color:var(--dim);margin:-0.8rem 0 1.5rem;letter-spacing:0.05em;">Listings are surfaced from live web search — always click through to verify price &amp; availability before acting.</p>
+  <p style="font-family:'Roboto Mono',monospace;font-size:0.62rem;color:var(--dim);margin:-0.8rem 0 1.5rem;letter-spacing:0.05em;">Available listings only — sold cars are excluded. Always click through to verify price &amp; availability before acting.</p>
   <div class="cards" id="cardsGrid"></div>
   <div class="message-box" id="noResults">
     <h3>No Listings Found</h3>
@@ -475,12 +479,41 @@ function buildCard(item) {
     </a>`;
 }
 
+let statusTimer = null;
+const STATUS_MSGS = [
+  'Scanning marketplaces...',
+  'Querying live listings...',
+  'Filtering by your criteria...',
+  'Pulling specs & details...',
+  'Almost there — compiling results...'
+];
+function cycleStatus(query, n) {
+  let i = 0;
+  setStatus(`Searching for "${query}" across ${n} sources...`);
+  statusTimer = setInterval(() => {
+    i = (i + 1) % STATUS_MSGS.length;
+    setStatus(STATUS_MSGS[i]);
+  }, 3500);
+}
+function stopStatus() {
+  if (statusTimer) { clearInterval(statusTimer); statusTimer = null; }
+  hideStatus();
+}
+
+// parse a mileage string like "47,200 mi" -> 47200
+function parseMiles(s) {
+  if (!s) return null;
+  const m = String(s).replace(/,/g, '').match(/(\d{3,7})/);
+  return m ? parseInt(m[1], 10) : null;
+}
+
 async function doSearch() {
-  const year  = document.getElementById('year').value.trim();
-  const make  = document.getElementById('make').value.trim();
-  const model = document.getElementById('model').value.trim();
-  const trim  = document.getElementById('trim').value.trim();
-  const sources = getCheckedSources();
+  const year     = document.getElementById('year').value.trim();
+  const make     = document.getElementById('make').value.trim();
+  const model    = document.getElementById('model').value.trim();
+  const trim     = document.getElementById('trim').value.trim();
+  const maxMiles = document.getElementById('maxMiles').value.trim();
+  const sources  = getCheckedSources();
 
   if (!make && !model) {
     alert('Please enter at least a Make or Model.');
@@ -492,15 +525,13 @@ async function doSearch() {
   document.getElementById('searchBtn').disabled = true;
   document.getElementById('resultsWrap').style.display = 'none';
   document.getElementById('noResults').classList.remove('active');
-  setStatus(`Searching for "${query}" across ${sources.length} sources...`);
-
-  // (search prompt is built securely on the backend)
+  cycleStatus(query, sources.length);
 
   try {
     const resp = await fetch('/api/search', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query, sources })
+      body: JSON.stringify({ query, sources, maxMiles: maxMiles || null })
     });
 
     const data = await resp.json();
@@ -509,21 +540,38 @@ async function doSearch() {
       throw new Error(data.error || 'Search request failed');
     }
 
-    const listings = Array.isArray(data.listings) ? data.listings : [];
+    let listings = Array.isArray(data.listings) ? data.listings : [];
 
-    hideStatus();
+    // Backstop filters (in case the model slips one through):
+    // 1) drop anything marked sold / no-longer-available
+    listings = listings.filter(it => {
+      const blob = `${it.price || ''} ${it.condition || ''} ${it.title || ''}`.toLowerCase();
+      return !/(sold|no longer available|auction ended|ended:)/.test(blob);
+    });
+    // 2) enforce max mileage when a number is parseable
+    if (maxMiles) {
+      const cap = parseInt(maxMiles, 10);
+      listings = listings.filter(it => {
+        const mi = parseMiles(it.mileage);
+        return mi === null ? true : mi <= cap;  // keep if mileage unknown
+      });
+    }
+
+    stopStatus();
     document.getElementById('resultsWrap').style.display = 'block';
 
     if (!listings.length) {
       document.getElementById('noResults').classList.add('active');
-      document.getElementById('resultsCount').textContent = '0 listings found';
+      document.getElementById('noResults').querySelector('h3').textContent = 'No Listings Found';
+      document.getElementById('noResults').querySelector('p').textContent = 'Try broadening your search — remove the trim, raise the mileage cap, or widen the year.';
+      document.getElementById('resultsCount').textContent = '0 available listings';
     } else {
-      document.getElementById('resultsCount').textContent = `${listings.length} listing${listings.length !== 1 ? 's' : ''} found`;
+      document.getElementById('resultsCount').textContent = `${listings.length} available listing${listings.length !== 1 ? 's' : ''}`;
       document.getElementById('cardsGrid').innerHTML = listings.map(buildCard).join('');
     }
 
   } catch(err) {
-    hideStatus();
+    stopStatus();
     document.getElementById('resultsWrap').style.display = 'block';
     document.getElementById('noResults').classList.add('active');
     document.getElementById('noResults').querySelector('h3').textContent = 'Search Error';
