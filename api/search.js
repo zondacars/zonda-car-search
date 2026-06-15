@@ -30,6 +30,7 @@ export default async function handler(req, res) {
       hemmings: 'Hemmings (hemmings.com)',
       classiccars: 'ClassicCars.com',
       carsandbids: 'Cars & Bids (carsandbids.com)',
+      cars: 'Cars.com',
       kbb: 'Kelley Blue Book Cars for Sale (kbb.com/cars-for-sale only)',
       copart: 'Copart',
       autotrader: 'AutoTrader',
