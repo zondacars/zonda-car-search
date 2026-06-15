@@ -540,7 +540,7 @@ async function doSearch() {
     const resp = await fetch('/api/search', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query, sources, maxMiles: maxMiles || null })
+      body: JSON.stringify({ query, sources, trim: trim || null, maxMiles: maxMiles || null })
     });
 
     const data = await resp.json();
