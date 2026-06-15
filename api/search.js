@@ -23,9 +23,23 @@ export default async function handler(req, res) {
     const { query, sources, maxMiles } = req.body || {};
     if (!query) return res.status(400).json({ error: 'Missing search query.' });
 
+    // Map each selected source id to a clear phrase the search can act on.
+    const SOURCE_PHRASES = {
+      bat: 'Bring a Trailer (bringatrailer.com)',
+      ebay: 'eBay Motors',
+      hemmings: 'Hemmings (hemmings.com)',
+      classiccars: 'ClassicCars.com',
+      carsandbids: 'Cars & Bids (carsandbids.com)',
+      kbb: 'Kelley Blue Book Cars for Sale (kbb.com/cars-for-sale only)',
+      copart: 'Copart',
+      autotrader: 'AutoTrader',
+      cargurus: 'CarGurus',
+      facebook: 'Facebook Marketplace',
+      dealerships: "individual dealer / specialist dealer websites — a dealer's own website (e.g. classic-car and specialty dealers like Gateway, RK Motors, Streetside Classics), NOT marketplaces or aggregators"
+    };
     const srcList = Array.isArray(sources) && sources.length
-      ? sources.join(', ')
-      : 'all major classic car marketplaces';
+      ? sources.map(id => SOURCE_PHRASES[id] || id).join('; ')
+      : 'all major classic car marketplaces and specialist dealer websites';
 
     const mileageRule = maxMiles
       ? `\n- ONLY include cars with ${Number(maxMiles).toLocaleString()} miles or fewer. Exclude anything clearly above that.`
