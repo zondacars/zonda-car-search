@@ -33,22 +33,23 @@ export default async function handler(req, res) {
 
     const prompt = `You are a classic and rare car listing search engine. The user is searching for this car: "${query}".
 
-Do MANY targeted web searches across these sources to find as many real matches as possible: ${srcList}. Search each promising source specifically (e.g. site-specific searches), not just one broad query.
+PROCESS (follow in order):
+1. Use web_search to find candidate listings across sources like: ${srcList}. Run several targeted searches.
+2. For EACH promising candidate, use web_fetch to OPEN the actual listing page and read it.
+3. From the fetched page content, KEEP a listing ONLY if it is clearly still FOR SALE right now. DISCARD it if the page shows any of: "sold", "sale pending", "no longer available", "this listing has ended", "auction ended", "bidding ended", "winning bid", a past end-date, or a 404/removed page. eBay ended auctions and sold ClassicCars/dealer pages MUST be discarded here.
+4. Only listings you have fetched and confirmed active may appear in the output. If you could not fetch/confirm a listing, do not include it.
 
-CRITICAL — INDIVIDUAL CAR PAGES ONLY:
-- Every result MUST link to a SINGLE specific vehicle's own listing page (one car, its own price, photos, and description).
-- REJECT and never return: search results pages, category/browse pages, "X cars for sale" roundup pages, filtered-list URLs, dealer inventory index pages, or auction "results" archives. If a URL contains things like /search, /results, ?make=, ?model=, /cars-for-sale (with no specific vehicle), /inventory (index), it is NOT a valid result.
-- A valid listing URL points at one car — typically with a unique listing/stock/item ID or a specific car slug in the path (e.g. .../listing/2023-dodge-challenger-srt-hellcat-12345 or an eBay item number).
-- If you only find a search/category page for a source, do NOT include it — open through to the individual cars, or skip that source.
+EXCLUDE these entirely (they are not live individual-car marketplaces):
+- Valuation / info sites: KBB / kbb.com, Edmunds, NADA, JD Power, Carfax value pages.
+- Search results pages, category/browse pages, "X cars for sale" roundups, dealer inventory index pages, auction results archives.
+Every result URL must be ONE specific car's own listing page (unique stock/item ID or specific-car slug in the path).
 
-Treat AVAILABILITY and PRICE as separate. Three price states:
-1. For sale WITH a price -> include, put price in "price".
-2. For sale but "Call for price" / "Inquire" / "POA" -> INCLUDE, put "Call for price" in "price". These are live cars.
-3. SOLD / ended auction / withdrawn / no longer available -> EXCLUDE.
+PRICE STATES:
+- For sale with a price -> include, put price in "price".
+- For sale, "Call for price"/"Inquire"/"POA" -> include, put "Call for price" in "price".
+- Sold / ended / withdrawn -> exclude (per step 3).
 
-OTHER RULES:
-- Only real listings grounded in actual search results, each with a real individual-listing URL. NEVER invent URLs, prices, listings, or images. Never pad to reach a count.
-- For "image", include a direct image URL only if one appears in results; otherwise null.${mileageRule}
+RULES: Never invent URLs, prices, listings, or images. Never pad to reach a count. For "image", include a direct image URL only if one appears in results; otherwise null.${mileageRule}
 
 Return ONLY a valid JSON array (no markdown, no commentary). Each object:
 {
@@ -59,11 +60,11 @@ Return ONLY a valid JSON array (no markdown, no commentary). Each object:
   "location": "city/state or null",
   "condition": "one-word condition or null",
   "description": "1-2 sentence highlight of key specs and condition",
-  "url": "real INDIVIDUAL listing URL (never a search/category page)",
+  "url": "real INDIVIDUAL listing URL you fetched and confirmed active",
   "image": "direct image URL from results, or null"
 }
 
-Aim for up to 20 currently-available individual listings when they genuinely exist. Real ones only. Return [] if none found.`;
+Aim for up to 20 fetch-verified active listings when they genuinely exist. Verified real ones only. Return [] if none found.`;
 
     const callAnthropic = async () => {
       // abort before the 60s function limit (set via maxDuration below) so we can return a clean error
@@ -75,12 +76,16 @@ Aim for up to 20 currently-available individual listings when they genuinely exi
           headers: {
             'Content-Type': 'application/json',
             'x-api-key': apiKey,
-            'anthropic-version': '2023-06-01'
+            'anthropic-version': '2023-06-01',
+            'anthropic-beta': 'web-fetch-2025-09-10'
           },
           body: JSON.stringify({
             model: 'claude-sonnet-4-6',
             max_tokens: 6000,
-            tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 10 }],
+            tools: [
+              { type: 'web_search_20250305', name: 'web_search', max_uses: 6 },
+              { type: 'web_fetch_20250910', name: 'web_fetch', max_uses: 12 }
+            ],
             messages: [{ role: 'user', content: prompt }]
           }),
           signal: controller.signal
@@ -137,10 +142,12 @@ Aim for up to 20 currently-available individual listings when they genuinely exi
       return !/(sold|no longer available|auction ended|ended:)/.test(blob);
     });
 
-    // drop aggregator search/category pages and url-less results; require an individual listing URL
+    // drop aggregator search/category pages, valuation/info sites, and url-less results
+    const BLOCKED_DOMAINS = ['kbb.com', 'edmunds.com', 'nadaguides.com', 'jdpower.com', 'carfax.com', 'caranddriver.com', 'motortrend.com'];
     const looksLikeIndexPage = (u) => {
       if (!u) return true;
       const s = String(u).toLowerCase();
+      if (BLOCKED_DOMAINS.some(d => s.includes(d))) return true;  // valuation/info sites, not marketplaces
       const signals = [
         '/search', '/results', 'shopping/results', '/cars-for-sale/all',
         '?make=', '&make=', '?model=', '&model=', 'keyword=', 'searchradius',
